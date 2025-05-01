@@ -823,7 +823,7 @@ AutoParry:OnChanged(function(v)
 				local Distance = (character.PrimaryPart.Position - Ball.Position).Magnitude;
 				local Speed = Velocity.Magnitude;
 				local Ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 10;
-				local Parry_Accuracy = (Speed / 3.25) + Ping;
+				local Parry_Accuracy = (Speed / 10.50) + Ping;
 				local Curved = Auto_Parry.Is_Curved();
 				if ((Ball_Target == tostring(LocalPlayer)) and Aerodynamic) then
 					local Elapsed_Tornado = tick() - Aerodynamic_Time;
