@@ -1088,105 +1088,7 @@ local function updateBallTrail(ball)
     })
     trail.Enabled = true
 end
-local originalLightingSettings = {}
-local renderConnection
-local optimized = false
 
-local function optimize(state)
-    if state and not optimized then
-        optimized = true
-
-        local light = game:GetService("Lighting")
-        originalLightingSettings = {
-            GlobalShadows = light.GlobalShadows,
-            FogEnd = light.FogEnd,
-            Brightness = light.Brightness,
-            OutdoorAmbient = light.OutdoorAmbient,
-            EnvironmentDiffuseScale = light.EnvironmentDiffuseScale,
-            EnvironmentSpecularScale = light.EnvironmentSpecularScale,
-            ShadowSoftness = light.ShadowSoftness,
-            ShadowMapFormat = light.ShadowMapFormat,
-            ReflectionEnabled = light.ReflectionEnabled
-        }
-
-        -- Lighting optimizations
-        light.GlobalShadows = false
-        light.FogEnd = 1e5
-        light.Brightness = 1
-        light.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-        light.EnvironmentDiffuseScale = 0
-        light.EnvironmentSpecularScale = 0
-        light.ShadowSoftness = 0
-        light.ShadowMapFormat = Enum.ShadowMapFormat.NoShadows
-        light.ReflectionEnabled = false
-
-        -- Terrain
-        local terrain = workspace:FindFirstChildOfClass("Terrain")
-        if terrain then
-            terrain.WaterWaveSize = 0
-            terrain.WaterWaveSpeed = 0
-            terrain.WaterReflectance = 0
-            terrain.WaterTransparency = 1
-            terrain.Decorations = false
-        end
-
-        -- Optimize parts safely
-        task.defer(function()
-            for _, obj in ipairs(game:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
-                    obj.Enabled = false
-                elseif obj:IsA("Explosion") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                    obj:Destroy()
-                elseif obj:IsA("BasePart") then
-                    obj.Material = Enum.Material.Plastic
-                    obj.Reflectance = 0
-                elseif obj:IsA("Texture") or obj:IsA("Decal") then
-                    obj:Destroy()
-                elseif obj:IsA("SurfaceAppearance") then
-                    pcall(function() obj:Destroy() end)
-                end
-            end
-        end)
-
-        -- Dynamic disabling of new emitters
-        if renderConnection then renderConnection:Disconnect() end
-        renderConnection = game:GetService("RunService").RenderStepped:Connect(function()
-            for _, v in ipairs(workspace:GetDescendants()) do
-                if v:IsA("ParticleEmitter") or v:IsA("Trail") then
-                    v.Enabled = false
-                end
-            end
-        end)
-
-        game:GetService("RenderSettings").QualityLevel = 1
-
-    elseif not state and optimized then
-        optimized = false
-
-        local light = game:GetService("Lighting")
-        for k, v in pairs(originalLightingSettings) do
-            pcall(function() light[k] = v end)
-        end
-
-        game:GetService("RenderSettings").QualityLevel = 21
-
-        if renderConnection then
-            renderConnection:Disconnect()
-            renderConnection = nil
-        end
-
-        warn("Some settings may require a rejoin to fully restore.")
-    end
-end
-
-local Toggle = Tabs.Visual:AddToggle("BladeBallLagReducer", {
-    Title = "Super Anti-Lag (Safe)",
-    Description = "Removes effects and simplifies visuals while keeping core gameplay intact.",
-    Default = false,
-    Callback = function(state)
-        optimize(state)
-    end
-})
 local ballProcessingConnection = RunService.Heartbeat:Connect(function()
     local ball = Auto_Parry.Get_Ball()
     if ball and not ball:FindFirstChild("DarkTrail") then
@@ -1206,6 +1108,69 @@ Tabs.Visual:AddToggle("DarkTrailToggle", {
                 if trail then trail:Destroy() end
             end
         end
+local originalLightingSettings = {}
+local renderConnection
+
+local function optimize(state)
+    local light = game:GetService("Lighting")
+    local render = game:GetService("RenderSettings")
+
+    if state then
+        if not next(originalLightingSettings) then
+            originalLightingSettings = {
+                GlobalShadows = light.GlobalShadows,
+                FogEnd = light.FogEnd,
+                Brightness = light.Brightness,
+                OutdoorAmbient = light.OutdoorAmbient,
+                EnvironmentDiffuseScale = light.EnvironmentDiffuseScale,
+                EnvironmentSpecularScale = light.EnvironmentSpecularScale,
+                ShadowSoftness = light.ShadowSoftness,
+                ShadowMapFormat = light.ShadowMapFormat,
+                ReflectionEnabled = light.ReflectionEnabled
+            }
+        end
+
+        render.QualityLevel = 1
+        light.GlobalShadows = false
+        light.FogEnd = 1e5
+        light.Brightness = 1
+        light.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        light.EnvironmentDiffuseScale = 0
+        light.EnvironmentSpecularScale = 0
+        light.ShadowSoftness = 0
+        light.ShadowMapFormat = Enum.ShadowMapFormat.NoShadows
+        light.ReflectionEnabled = false
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+                obj.Enabled = false
+            elseif obj:IsA("BasePart") then
+                obj.Material = Enum.Material.Plastic
+                obj.Reflectance = 0
+            end
+        end
+
+        if renderConnection then renderConnection:Disconnect() end
+        renderConnection = game:GetService("RunService").RenderStepped:Connect(function()
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                    v.Enabled = false
+                end
+            end
+        end)
+
+    else
+        for k, v in pairs(originalLightingSettings) do
+            pcall(function() light[k] = v end)
+        end
+        render.QualityLevel = 21
+
+        if renderConnection then
+            renderConnection:Disconnect()
+            renderConnection = nil
+        end
+    end
+end
     end
 })
 
