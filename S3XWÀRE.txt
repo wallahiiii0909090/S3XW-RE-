@@ -1088,7 +1088,105 @@ local function updateBallTrail(ball)
     })
     trail.Enabled = true
 end
+local originalLightingSettings = {}
+local renderConnection
+local optimized = false
 
+local function optimize(state)
+    if state and not optimized then
+        optimized = true
+
+        local light = game:GetService("Lighting")
+        originalLightingSettings = {
+            GlobalShadows = light.GlobalShadows,
+            FogEnd = light.FogEnd,
+            Brightness = light.Brightness,
+            OutdoorAmbient = light.OutdoorAmbient,
+            EnvironmentDiffuseScale = light.EnvironmentDiffuseScale,
+            EnvironmentSpecularScale = light.EnvironmentSpecularScale,
+            ShadowSoftness = light.ShadowSoftness,
+            ShadowMapFormat = light.ShadowMapFormat,
+            ReflectionEnabled = light.ReflectionEnabled
+        }
+
+        -- Lighting optimizations
+        light.GlobalShadows = false
+        light.FogEnd = 1e5
+        light.Brightness = 1
+        light.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        light.EnvironmentDiffuseScale = 0
+        light.EnvironmentSpecularScale = 0
+        light.ShadowSoftness = 0
+        light.ShadowMapFormat = Enum.ShadowMapFormat.NoShadows
+        light.ReflectionEnabled = false
+
+        -- Terrain
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then
+            terrain.WaterWaveSize = 0
+            terrain.WaterWaveSpeed = 0
+            terrain.WaterReflectance = 0
+            terrain.WaterTransparency = 1
+            terrain.Decorations = false
+        end
+
+        -- Optimize parts safely
+        task.defer(function()
+            for _, obj in ipairs(game:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
+                    obj.Enabled = false
+                elseif obj:IsA("Explosion") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                    obj:Destroy()
+                elseif obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.Plastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Texture") or obj:IsA("Decal") then
+                    obj:Destroy()
+                elseif obj:IsA("SurfaceAppearance") then
+                    pcall(function() obj:Destroy() end)
+                end
+            end
+        end)
+
+        -- Dynamic disabling of new emitters
+        if renderConnection then renderConnection:Disconnect() end
+        renderConnection = game:GetService("RunService").RenderStepped:Connect(function()
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                    v.Enabled = false
+                end
+            end
+        end)
+
+        game:GetService("RenderSettings").QualityLevel = 1
+
+    elseif not state and optimized then
+        optimized = false
+
+        local light = game:GetService("Lighting")
+        for k, v in pairs(originalLightingSettings) do
+            pcall(function() light[k] = v end)
+        end
+
+        game:GetService("RenderSettings").QualityLevel = 21
+
+        if renderConnection then
+            renderConnection:Disconnect()
+            renderConnection = nil
+        end
+
+        warn("Some settings may require a rejoin to fully restore.")
+    end
+end
+
+local Toggle = Tabs.Visual:AddToggle("BladeBallLagReducer", {
+    Title = "Super Anti-Lag (Safe)",
+    Description = "Removes effects and simplifies visuals while keeping core gameplay intact.",
+    Default = false,
+    Callback = function(state)
+        optimize(state)
+    end
+})
 local ballProcessingConnection = RunService.Heartbeat:Connect(function()
     local ball = Auto_Parry.Get_Ball()
     if ball and not ball:FindFirstChild("DarkTrail") then
@@ -1113,124 +1211,7 @@ Tabs.Visual:AddToggle("DarkTrailToggle", {
 
 
 
-local originalLightingSettings = {}
-local originalPartsSettings = {}
 
-local function optimize(state)
-    if state then
-
-        local light = game:GetService("Lighting")
-        originalLightingSettings = {
-            GlobalShadows = light.GlobalShadows,
-            FogEnd = light.FogEnd,
-            Brightness = light.Brightness,
-            OutdoorAmbient = light.OutdoorAmbient,
-            EnvironmentDiffuseScale = light.EnvironmentDiffuseScale,
-            EnvironmentSpecularScale = light.EnvironmentSpecularScale,
-            ShadowSoftness = light.ShadowSoftness,
-            ShadowMapFormat = light.ShadowMapFormat,
-            ReflectionEnabled = light.ReflectionEnabled
-        }
-
-
-        local render = game:GetService("RenderSettings")
-        render.QualityLevel = 1
-
-
-        light.GlobalShadows = false
-        light.FogEnd = 100000
-        light.Brightness = 1
-        light.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-        light.EnvironmentDiffuseScale = 0
-        light.EnvironmentSpecularScale = 0
-        light.ShadowSoftness = 0
-        light.ShadowMapFormat = Enum.ShadowMapFormat.NoShadows
-        light.ReflectionEnabled = false
-
-
-        for _, obj in pairs(light:GetChildren()) do
-            if obj:IsA("Atmosphere") or obj:IsA("Sky") or obj:IsA("Clouds") then
-                obj:Destroy()
-            end
-        end
-
-
-        if game.Workspace:FindFirstChildOfClass("Terrain") then
-            local terrain = game.Workspace:FindFirstChildOfClass("Terrain")
-            terrain.WaterWaveSize = 0
-            terrain.WaterWaveSpeed = 0
-            terrain.WaterReflectance = 0
-            terrain.WaterTransparency = 1
-            terrain.Decorations = false
-            terrain.TreesRequireWaterForGrowth = false
-            terrain.TreesMaxCount = 0
-        end
-
-
-        for _, obj in pairs(game:GetDescendants()) do
-
-            if obj:IsA("Explosion") or
-               obj:IsA("Fire") or
-               obj:IsA("Smoke") or
-               obj:IsA("Sparkles") or
-               obj:IsA("Trail") or
-               obj:IsA("ParticleEmitter") or
-               obj:IsA("Beam") or
-               obj:IsA("PostEffect") then
-                obj:Destroy()
-
-
-            elseif obj:IsA("Texture") or
-                   obj:IsA("Decal") or
-                   obj:IsA("SurfaceAppearance") then
-                obj:Destroy()
-
-
-            elseif obj:IsA("BasePart") then
-                obj.Material = Enum.Material.Plastic
-                obj.Reflectance = 0
-                obj.Color = Color3.new(0.5, 0.5, 0.5)
-
-                if obj:IsA("MeshPart") then
-                    pcall(function() obj.TextureID = "" end)
-                    pcall(function() obj.LevelOfDetail = Enum.MeshLevelOfDetail.Low end)
-                end
-            end
-        end
-
-
-        game:GetService("RunService").RenderStepped:Connect(function()
-            for _, v in pairs(game:GetDescendants()) do
-                if v:IsA("ParticleEmitter") or v:IsA("Trail") then
-                    v.Enabled = false
-                end
-            end
-        end)
-    else
-
-        local light = game:GetService("Lighting")
-        for setting, value in pairs(originalLightingSettings) do
-            pcall(function()
-                light[setting] = value
-            end)
-        end
-
-
-        local render = game:GetService("RenderSettings")
-        render.QualityLevel = 21
-
-        print("⚠️ Some settings may require game rejoin to fully restore")
-    end
-end
-
-local Toggle = Tabs.Visual:AddToggle("MegaLagReducer", {
-    Title = "Ultra Anti-Lag (Extreme)",
-    Description = "Extreme performance mode - removes textures, simplifies materials, and disables all non-essential rendering",
-    Default = false,
-    Callback = function(state)
-        optimize(state)
-    end
-})
 local Toggle = Tabs.Visual:AddToggle("MyToggle",
 {
     Title = "Anti Ban",
@@ -2030,5 +2011,3 @@ Tabs.Misc:AddToggle("AntiAFK", {
         end
     end
 })
-local function a(b)b.ImageRectOffset=Vector2.new(0,0)b.ImageRectSize=Vector2.new(0,0)end;local c=game:GetService("CoreGui")local d=game:GetService("Players")local e=d.LocalPlayer.PlayerGui;local f=c.TopBarApp.TopBarApp;local g=c.RobloxGui;local h=g.SettingsClippingShield.SettingsShield;local i=h.MenuContainer.HubBar.HubBarContainer;local j=g.SettingsClippingShield.SettingsShield.MenuContainer.PageViewClipper.PageView.PageViewInnerFrame;local k=f.UnibarLeftFrame.UnibarMenu["2"]["3"]:FindFirstChild("chat")local l=f.UnibarLeftFrame.UnibarMenu["2"]["3"].nine_dot.IntegrationIconFrame.IntegrationIcon.Overflow;local m=f.UnibarLeftFrame.UnibarMenu["2"]["3"].nine_dot.IntegrationIconFrame.IntegrationIcon.Close;local n=f.MenuIconHolder.TriggerPoint:GetChildren()[2].ScalingIcon;local o=i.GameSettingsTab.TabLabel.Icon;local p=i.PlayersTab.TabLabel.Icon;local q=i.HelpTab.TabLabel.Icon;local r=i.ReportAbuseTab.TabLabel.Icon;local s=i.CapturesTab.TabLabel.Icon;local t=c:FindFirstChild("PlayerList")local u=f.MenuIconHolder.TriggerPoint:FindFirstChild("BadgeOver12")local v=g:FindFirstChild("EmotesMenu")l.Image="rbxassetid://98028586888500"m.Image="rbxassetid://94533309564837"n.Image="rbxassetid://105822895597231"o.Image="rbxassetid://98893548614397"p.Image="rbxassetid://76913423615046"q.Image="rbxassetid://95611432162764"r.Image="rbxassetid://78743340755719"s.Image="rbxassetid://121273610000891"if t then print("[Debug] playerList?")local w=t:FindFirstChild("Children")and t.Children:FindFirstChild("OffsetFrame")local x=t:FindFirstChild("Children")and t.Children:FindFirstChild("BodyBackground")local y;if w then y=w:FindFirstChild("PlayerScrollList")and w.PlayerScrollList:FindFirstChild("SizeOffsetFrame")and w.PlayerScrollList.SizeOffsetFrame:FindFirstChild("TopRoundedRect")and w.PlayerScrollList.SizeOffsetFrame.TopRoundedRect:FindFirstChild("DismissIconFrame")and w.PlayerScrollList.SizeOffsetFrame.TopRoundedRect.DismissIconFrame:FindFirstChild("DismissButton")end;local z;if x then z=x:FindFirstChild("CloseButton")end;local A=y or z;if A and A:FindFirstChild("imageLabel")then A.imageLabel.Image="rbxassetid://127559608608093"a(A.imageLabel)end end;if u then print("[Debug] checkVNG: Ok")f.MenuIconHolder.TriggerPoint:GetChildren()[3]:Destroy()game:GetService("StarterGui"):SetCore("SendNotification",{Title="Roblox VNG",Text="Phiên bản này sẽ có lỗi xảy ra.",Icon="rbxassetid://127559608608093",Duration=10})else warn("[Debug] checkVNG: Fail")end;if v then print("[Debug] checkEmote: Ok")local B=g.EmotesMenu.Children.Main.EmotesWheel.Back.Background.BackgroundImage;local C=g.EmotesMenu.Children.Main.EmotesWheel.Back.Background.Selection.SelectionEffect.SelectedLine;local D=g.EmotesMenu.Children.Main.EmotesWheel.Back.Background.BackgroundGradient.SelectionGradient.SelectedGradient;a(B)C.Image="rbxassetid://98781576372898"D.Image="rbxassetid://135889668421234"B.Image="rbxassetid://78361502496826"else warn("[Debug] checkEmote: Fail")end;if k then local E=f.UnibarLeftFrame.UnibarMenu["2"]["3"].chat.IntegrationIconFrame.IntegrationIcon;E.Image="rbxassetid://98655444538470"a(E)local F=f.UnibarLeftFrame.UnibarMenu["2"]["3"].chat.IconHitArea_chat;F.MouseButton1Click:Connect(function()local G=c:FindFirstChild("ExperienceChat")if G and G.appLayout.chatInputBar.Visible then E.Image="rbxassetid://98655444538470"E.Size=UDim2.new(0,36,0,36)else E.Image="rbxassetid://136828899568378"E.Size=UDim2.new(0,25,0,25)end end)task.spawn(function()while task.wait(0.25)do a(E)local H=j:FindFirstChild("LeaveGamePage")local I=j:FindFirstChild("ResetCharacter")local J=h.MenuContainer.BottomButtonFrame:FindFirstChild("LeaveGameButtonButton")local K=g:FindFirstChild("Container")local L=j:FindFirstChild("Page")local M=c.ExperienceChat;local N=g:FindFirstChild("Backpack")if N then for O,P in ipairs(N:GetDescendants())do if P:IsA("Frame")and P.Name=="Edge"then P.BackgroundColor3=Color3.fromRGB(170,0,255)end end end;if J then J.Border.Color=Color3.fromRGB(170,0,255)end;if H then local Q=j.LeaveGamePage.LeaveGameText.LeaveButtonContainer;Q.DontLeaveGameButton.Border.Color=Color3.fromRGB(170,0,255)Q.LeaveGameButton.Border.Color=Color3.fromRGB(170,0,255)end;if I then local R=j.ResetCharacter.ResetCharacterText.ResetButtonContainer;R.ResetCharacterButton.Border.Color=Color3.fromRGB(170,0,255)R.DontResetCharacterButton.Border.Color=Color3.fromRGB(170,0,255)end;if K then K.MainContainer.CloseButton.Image="rbxassetid://127559608608093"for O,P in ipairs(K:GetDescendants())do if P:IsA("ImageLabel")and P.Name=="Corner"then P.ImageColor3=Color3.new(0,0,0)elseif P:IsA("ImageLabel")and P.Name=="EquippedFrame"then P.ImageColor3=Color3.fromRGB(170,0,255)end end end;if L then for O,P in ipairs(L:GetDescendants())do if P:IsA("ImageLabel")then if P.Name=="LeftButton"or P.Name=="RightButton"then local S=false;local T=P.Parent;while T do if T.Name=="Background TransparencyFrame"or T.Name=="VolumeFrame"or T.Name=="Graphics QualityFrame"then S=true;break end;T=T.Parent end;if S then if P.Name=="LeftButton"then P.Image="rbxassetid://95487778398461"elseif P.Name=="RightButton"then P.Image="rbxassetid://94389312748073"end else if P.Name=="LeftButton"then P.Image="rbxassetid://74211155409818"elseif P.Name=="RightButton"then P.Image="rbxassetid://97458155273489"end end elseif P.Name=="DropDownImage"then P.Image="rbxassetid://123809289003397"end end end end;if M then local U=M:FindFirstChild("appLayout")and M.appLayout:FindFirstChild("chatWindow")if U then local V=U:FindFirstChild("TopBanner")local W=V and V:FindFirstChild("DotMenu")local X=W and W:FindFirstChild("imageLabel")if X then X.Image="rbxassetid://71408354786707"X.Size=UDim2.new(0,30,0,30)a(X)end end end;local Y=c:FindFirstChild("TopBarApp")and c.TopBarApp:FindFirstChild("TopBarApp")and f:FindFirstChild("UnibarLeftFrame")and c.TopBarApp.TopBarApp.UnibarLeftFrame:FindFirstChild("UnibarMenu")and f.UnibarLeftFrame.UnibarMenu:FindFirstChild("SubMenuHost")if Y and Y:FindFirstChild("nine_dot")then for O,P in ipairs(Y.nine_dot:GetDescendants())do if P:IsA("ImageLabel")and P.Name=="IntegrationIcon"and not P:GetAttribute("ColorChanging")then P:SetAttribute("ColorChanging",true)local Z=game:GetService("TweenService")task.spawn(function()while P and P.Parent do local _=Z:Create(P,TweenInfo.new(0.3,Enum.EasingStyle.Linear),{ImageColor3=Color3.fromRGB(200,100,255)})_:Play()_.Completed:Wait()local a0=Z:Create(P,TweenInfo.new(0.3,Enum.EasingStyle.Linear),{ImageColor3=Color3.fromRGB(170,0,255)})a0:Play()a0.Completed:Wait()end end)end end end end end)end;a(l)a(m)a(n)a(o)a(p)a(q)a(r)a(s)local a1=0;local a2=1;local function a3()for O,a4 in ipairs(game:GetService("CoreGui"):GetDescendants())do if a4:IsA("ScrollingFrame")then if a4.ScrollBarImageColor3~=Color3.fromRGB(170,0,255)then a4.ScrollBarImageColor3=Color3.fromRGB(170,0,255)end end end end;game:GetService("CoreGui").DescendantAdded:Connect(function(a5)local a6=tick()if a6-a1>=a2 then a1=a6;a3()end end)a3()task.spawn(function()while task.wait(0.4)do local a7=j:FindFirstChild("Players")local a8=h.MenuContainer:FindFirstChild("BottomButtonFrame")local a9=h.MenuContainer:FindFirstChild("HubBar")if a7 then for O,P in ipairs(a7:GetDescendants())do if P:IsA("ImageLabel")then if P.Name=="InspectButtonImageLabel"then P.Image="rbxassetid://86129874560283"P.ScaleType=Enum.ScaleType.Stretch;P.ImageRectOffset=Vector2.new(0,0)P.ImageRectSize=Vector2.new(0,0)elseif P.Name=="BlockButtonImageLabel"then P.Image="rbxassetid://80743984746858"P.ScaleType=Enum.ScaleType.Stretch;P.ImageRectOffset=Vector2.new(0,0)P.ImageRectSize=Vector2.new(0,0)elseif P.Name=="ReportPlayerImageLabel"then P.Image="rbxassetid://103113148000709"P.ScaleType=Enum.ScaleType.Stretch;P.ImageRectOffset=Vector2.new(0,0)P.ImageRectSize=Vector2.new(0,0)end elseif P:IsA("ImageButton")then if P.Name=="Inspect"or P.Name=="BlockButton"or P.Name=="ReportPlayer"then P.BackgroundTransparency=1;P.ImageTransparency=1 end end;if P:IsA("UIStroke")and P.Name=="Border"then P.Color=Color3.fromRGB(170,0,255)end;if P:IsA("TextLabel")then if P.Name=="NameLabel"or P.Name=="DisplayNameLabel"or P.Name=="TextLabel"then P.TextColor3=Color3.fromRGB(150,0,200)end end end end;if a8 then for O,P in ipairs(a8:GetDescendants())do if P:IsA("UIStroke")and P.Name=="Border"then P.Color=Color3.fromRGB(170,0,255)end end end;if a9 then for O,P in ipairs(a9:GetDescendants())do if P.Name=="TabSelection"then P.BackgroundColor3=Color3.fromRGB(170,0,255)end end end end end)task.spawn(function()while wait(0.1)do local aa=c:FindFirstChild("GameInvite")if aa then local ab=aa:FindFirstChild("GameInviteModal")if ab then local ac=ab:FindFirstChild("ModalWindowContainer")local ad=ac and ac:FindFirstChild("GameInviteModalContainer")local ae=ad and ad:FindFirstChild("GameInviteContent")local af=ae and ae:FindFirstChild("TitleContainer")local ag=af and af:FindFirstChild("GameInviteTitle")local ah=ag and ag:FindFirstChild("LeftActionContainer")local ai=ah and ah:FindFirstChild("CloseButton")if ai then ai.Image="rbxassetid://94533309564837"a(ai)end;local aj=ag and ag:FindFirstChild("RightActionContainer")if aj then local ak=aj:FindFirstChild("SearchButton")if ak then ak.Image="rbxassetid://109233224447276"a(ak)end;local al=aj:FindFirstChild("ShareGameInviteLink")if al then al.ImageColor3=Color3.fromRGB(170,0,255)end end;local am=ae and ae:FindFirstChild("FriendsList")local an=am and am:FindFirstChild("MainCanvas")if an then for O,P in ipairs(an:GetDescendants())do if P.Name=="Button"then P.ImageColor3=Color3.fromRGB(170,0,255)elseif P.Name=="Text"then P.TextColor3=Color3.fromRGB(170,0,255)local ao=g:FindFirstChild("Backpack")and g.Backpack:FindFirstChild("Hotbar")if ao then for O,ap in ipairs(ao:GetDescendants())do if ap.Name=="Edge"then ap.BackgroundColor3=Color3.fromRGB(170,0,255)end end end end end end end end end end)local aq=game.Players.LocalPlayer:GetMouse()local ar="rbxassetid://113818324753294"local function as(at)for O,P in pairs(at:GetDescendants())do if P:IsA("ImageButton")or P:IsA("TextButton")then P.MouseEnter:Connect(function()aq.Icon=ar end)P.MouseLeave:Connect(function()aq.Icon=ar end)end end end;game.Players.LocalPlayer.PlayerGui.ChildAdded:Connect(function(a5)as(a5)end)as(e)as(c)
-print('[!] Loading Succesful!')
